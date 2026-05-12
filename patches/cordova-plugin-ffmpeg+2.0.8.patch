@@ -1,0 +1,44 @@
+diff --git a/node_modules/cordova-plugin-ffmpeg/src/android/FFMpeg.java b/node_modules/cordova-plugin-ffmpeg/src/android/FFMpeg.java
+index f9762e7..0b40bae 100644
+--- a/node_modules/cordova-plugin-ffmpeg/src/android/FFMpeg.java
++++ b/node_modules/cordova-plugin-ffmpeg/src/android/FFMpeg.java
+@@ -31,6 +31,10 @@ public class FFMpeg extends CordovaPlugin {
+             }
+             });
+             return true;
++        } else if (action.equals("cancel")) {
++            FFmpegKit.cancel();
++            callbackContext.success();
++            return true;
+         } else if(action.equals("probe")) {
+             MediaInformationSession mediaInformationSession = FFprobeKit.getMediaInformation(data.getString(0));
+             ReturnCode returnCode = mediaInformationSession.getReturnCode();
+diff --git a/node_modules/cordova-plugin-ffmpeg/src/android/ffmpeg-kit.gradle b/node_modules/cordova-plugin-ffmpeg/src/android/ffmpeg-kit.gradle
+index 03f040e..bc8fc69 100644
+--- a/node_modules/cordova-plugin-ffmpeg/src/android/ffmpeg-kit.gradle
++++ b/node_modules/cordova-plugin-ffmpeg/src/android/ffmpeg-kit.gradle
+@@ -6,8 +6,8 @@ repositories{
+ 
+ dependencies {
+     implementation(name:'ffmpeg-kit-min-gpl-4.5.1-1.LTS', ext:'aar')
+-    implementation(name:'smart-exception-common-0.1.1', ext:'jar')
+-    implementation(name:'smart-exception-java-0.1.1', ext:'jar')
++    // implementation(name:'smart-exception-common-0.1.1', ext:'jar')
++    // implementation(name:'smart-exception-java-0.1.1', ext:'jar')
+ }
+ 
+ android {
+diff --git a/node_modules/cordova-plugin-ffmpeg/www/ffmpeg.js b/node_modules/cordova-plugin-ffmpeg/www/ffmpeg.js
+index 0e00945..8a0b129 100644
+--- a/node_modules/cordova-plugin-ffmpeg/www/ffmpeg.js
++++ b/node_modules/cordova-plugin-ffmpeg/www/ffmpeg.js
+@@ -4,6 +4,9 @@ module.exports = {
+   exec: function (cmd, successCallback, errorCallback) {
+     cordova.exec(successCallback, errorCallback, "FFMpeg", "exec", [cmd]);
+   },
++  cancel: function (successCallback, errorCallback) {
++    cordova.exec(successCallback, errorCallback, "FFMpeg", "cancel", []);
++  },
+   probe: function (filePath, statusCallback, errorCallback) {
+     cordova.exec(statusCallback, errorCallback, "FFMpeg", "probe", [filePath]);
+   },

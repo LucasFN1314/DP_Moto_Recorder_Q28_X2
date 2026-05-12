@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">dp-intercom</string>
+    <string name="title_activity_main">dp-intercom</string>
+    <string name="package_name">ar.digitalpower.intercom</string>
+    <string name="custom_url_scheme">ar.digitalpower.intercom</string>
+</resources>

@@ -1,0 +1,8 @@
+{
+  "appId": "ar.digitalpower.intercom",
+  "appName": "dp-intercom",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true
+  }
+}
