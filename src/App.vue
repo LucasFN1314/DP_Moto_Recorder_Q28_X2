@@ -2,9 +2,13 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { registerPlugin } from '@capacitor/core';
 import { Filesystem } from '@capacitor/filesystem';
+import { App } from '@capacitor/app';
 
 const BluetoothAudio = registerPlugin('BluetoothAudio');
 const LocalWifi = registerPlugin('LocalWifi');
+const VideoPreview = registerPlugin('VideoPreview');
+
+const viewfinderRef = ref(null);
 
 const isRecording = ref(false);
 const isMuxing = ref(false);
@@ -12,6 +16,7 @@ const statusMessage = ref("CONECTANDO...");
 const recordingTime = ref("00:00");
 const micVolume = ref(1.0);
 const batteryLevel = ref("100%");
+const isPreviewActive = ref(true);
 let batteryInterval = null;
 
 const INTERCOM_SSID = "YX-Q28 2X-WIFI3a0578";
@@ -70,10 +75,15 @@ const connectIntercomWifi = async () => {
   try {
     statusMessage.value = "BUSCANDO INTERCOM...";
     const result = await LocalWifi.connect({ ssid: intercomSsid.value });
-    if (result.success) {
-      statusMessage.value = "LISTA PARA GRABAR";
-      updateBattery();
-    }
+      if (result.success) {
+        statusMessage.value = "LISTA PARA GRABAR";
+        updateBattery();
+        if (isPreviewActive.value) {
+          setTimeout(() => {
+            startVideoPreview();
+          }, 1000);
+        }
+      }
   } catch (e) {
     console.error("Error conectando al WiFi:", e);
     statusMessage.value = "ERROR WIFI";
@@ -84,9 +94,24 @@ const connectIntercomWifi = async () => {
   }
 };
 
+let appStateListener = null;
+
 onMounted(() => {
+  document.body.style.backgroundColor = 'transparent';
+  document.documentElement.style.backgroundColor = 'transparent';
+
   connectIntercomWifi();
   batteryInterval = setInterval(updateBattery, 30000); // Actualizar cada 30 segundos
+
+  // Manejar el ciclo de vida de la app para restaurar la previsualización
+  appStateListener = App.addListener('appStateChange', ({ isActive }) => {
+    if (isActive && isPreviewActive.value) {
+      // Pequeño retraso para asegurar que el sistema esté listo
+      setTimeout(startVideoPreview, 1000);
+    } else {
+      stopVideoPreview();
+    }
+  });
 });
 
 let currentVideoPath = '';
@@ -97,6 +122,37 @@ let timerInterval = null;
 let secondsElapsed = 0;
 
 const rtspUrl = 'rtsp://192.168.25.1:8080/?action=stream';
+
+const startVideoPreview = async () => {
+  if (!viewfinderRef.value) return;
+  const rect = viewfinderRef.value.getBoundingClientRect();
+  try {
+    await VideoPreview.start({
+      url: rtspUrl,
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height
+    });
+  } catch (e) {
+    console.error("Error starting video preview:", e);
+  }
+};
+
+const stopVideoPreview = async () => {
+  try {
+    await VideoPreview.stop();
+  } catch (e) {}
+};
+
+const togglePreview = async () => {
+  isPreviewActive.value = !isPreviewActive.value;
+  if (isPreviewActive.value) {
+    await startVideoPreview();
+  } else {
+    await stopVideoPreview();
+  }
+};
 
 const formatTime = (secs) => {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -225,6 +281,10 @@ const openGallery = async () => {
 };
 
 onUnmounted(() => {
+  if (appStateListener) {
+    appStateListener.remove();
+  }
+  stopVideoPreview();
   stopTimer();
   if (batteryInterval) clearInterval(batteryInterval);
 });
@@ -237,6 +297,16 @@ onUnmounted(() => {
     <div class="top-bar">
       <div class="resolution-badge">1080P / 60FPS</div>
       <div class="top-right">
+        <button class="preview-toggle" @click="togglePreview" :class="{ 'inactive': !isPreviewActive }" title="Alternar Vista">
+          <svg v-if="isPreviewActive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+            <line x1="1" y1="1" x2="23" y2="23" />
+          </svg>
+        </button>
         <button class="settings-trigger" @click="showSettings = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round"
@@ -300,9 +370,8 @@ onUnmounted(() => {
         <p class="sub-title">MOTO RECORDER</p>
       </div>
 
-      <div class="viewfinder">
-        <!-- Previsualización en vivo (Stream MJPEG HTTP) -->
-        <img src="http://192.168.25.1:8080/?action=stream" class="preview-stream" alt="Live Preview" />
+      <div class="viewfinder" ref="viewfinderRef">
+        <!-- Previsualización en vivo mediante VideoView nativo -->
 
         <div class="crosshair ch-horizontal"></div>
         <div class="crosshair ch-vertical"></div>
@@ -368,7 +437,7 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100vh;
-  background-color: #050505;
+  background-color: transparent;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   display: flex;
@@ -398,9 +467,27 @@ onUnmounted(() => {
   color: #00d2ff;
   padding: 5px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
 }
 
-.settings-trigger svg {
+.preview-toggle {
+  background: none;
+  border: none;
+  color: #00d2ff;
+  padding: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.3s ease;
+}
+
+.preview-toggle.inactive {
+  color: #666;
+}
+
+.settings-trigger svg,
+.preview-toggle svg {
   width: 24px;
   height: 24px;
 }
@@ -658,7 +745,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+  background: transparent;
+  box-shadow: 0 0 0 4000px #050505;
   overflow: hidden;
 }
 
@@ -774,6 +862,8 @@ onUnmounted(() => {
 .audio-control {
   padding: 0 30px;
   margin-bottom: 20px;
+  position: relative;
+  z-index: 10;
   transition: opacity 0.3s;
 }
 
@@ -821,6 +911,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   position: relative;
+  z-index: 10;
   background: linear-gradient(to top, rgba(0, 0, 0, 1), transparent);
   padding-bottom: 20px;
 }
@@ -902,7 +993,7 @@ html {
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: #050505;
+  background-color: transparent;
   overflow: hidden;
   overscroll-behavior: none;
 }
