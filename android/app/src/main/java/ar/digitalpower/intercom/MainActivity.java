@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BluetoothAudioPlugin.class);
         registerPlugin(LocalWifiPlugin.class);
         registerPlugin(VideoPreviewPlugin.class);
+        registerPlugin(KeepAlivePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

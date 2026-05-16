@@ -7,6 +7,7 @@ import { App } from '@capacitor/app';
 const BluetoothAudio = registerPlugin('BluetoothAudio');
 const LocalWifi = registerPlugin('LocalWifi');
 const VideoPreview = registerPlugin('VideoPreview');
+const KeepAlive = registerPlugin('KeepAlive');
 
 const viewfinderRef = ref(null);
 
@@ -81,7 +82,7 @@ const connectIntercomWifi = async () => {
         if (isPreviewActive.value) {
           setTimeout(() => {
             startVideoPreview();
-          }, 1000);
+          }, 3000);
         }
       }
   } catch (e) {
@@ -105,7 +106,7 @@ onMounted(() => {
 
   // Manejar el ciclo de vida de la app para restaurar la previsualización
   appStateListener = App.addListener('appStateChange', ({ isActive }) => {
-    if (isActive && isPreviewActive.value) {
+    if (isActive && isPreviewActive.value && !isRecording.value) {
       // Pequeño retraso para asegurar que el sistema esté listo
       setTimeout(startVideoPreview, 1000);
     } else {
@@ -193,12 +194,18 @@ const toggleRecording = async () => {
       (err) => console.error("Error al detener FFmpeg:", err)
     );
     stopTimer();
+    try { await KeepAlive.stop(); } catch (e) {}
     return;
   }
 
   isRecording.value = true;
   isIntentionalStop = false;
   statusMessage.value = "PREPARANDO...";
+
+  // Detener la vista previa para evitar saturar el ancho de banda del intercomunicador (2 conexiones simultáneas saturan la red)
+  if (isPreviewActive.value) {
+    await stopVideoPreview();
+  }
 
   const folderPath = '/storage/emulated/0/Download/Videos Digital Power Recorder';
   try {
@@ -207,7 +214,7 @@ const toggleRecording = async () => {
 
   const timestamp = new Date().getTime();
   finalPath = `${folderPath}/moto_record_${timestamp}.mp4`;
-  currentVideoPath = `/storage/emulated/0/Download/temp_vid_${timestamp}.mp4`;
+  currentVideoPath = `/storage/emulated/0/Download/temp_vid_${timestamp}.ts`;
   currentAudioPath = `/storage/emulated/0/Download/temp_aud_${timestamp}.m4a`;
 
   try {
@@ -216,10 +223,11 @@ const toggleRecording = async () => {
     console.error("No se pudo iniciar micrófono Bluetooth:", e);
   }
 
-  const ffmpegCommand = `-y -i ${rtspUrl} -an -c:v copy ${currentVideoPath}`;
+  const ffmpegCommand = `-y -fflags +genpts -i ${rtspUrl} -an -c:v copy ${currentVideoPath}`;
 
   statusMessage.value = "GRABANDO";
   startTimer();
+  try { await KeepAlive.start(); } catch (e) {}
 
   window.ffmpeg.exec(
     ffmpegCommand,
@@ -240,11 +248,15 @@ const handleMuxing = () => {
   if (!isRecording.value) return;
   isRecording.value = false;
   stopTimer();
+  try { KeepAlive.stop(); } catch (e) {}
 
   if (!isIntentionalStop) {
     statusMessage.value = "CONEXIÓN INTERRUMPIDA";
     cleanTempFiles();
-    setTimeout(() => { statusMessage.value = "LISTA PARA GRABAR"; }, 3000);
+    setTimeout(() => { 
+      statusMessage.value = "LISTA PARA GRABAR"; 
+      if (isPreviewActive.value) startVideoPreview();
+    }, 3000);
     return;
   }
 
@@ -261,15 +273,22 @@ const handleMuxing = () => {
         statusMessage.value = "¡VIDEO GUARDADO!";
         await cleanTempFiles();
         isMuxing.value = false;
-        setTimeout(() => { statusMessage.value = "LISTA PARA GRABAR"; recordingTime.value = "00:00"; }, 3000);
+        setTimeout(() => { 
+          statusMessage.value = "LISTA PARA GRABAR"; 
+          recordingTime.value = "00:00"; 
+          if (isPreviewActive.value) startVideoPreview();
+        }, 3000);
       },
       async (failure) => {
         statusMessage.value = "FALLO AL PROCESAR";
         isMuxing.value = false;
-        setTimeout(() => { statusMessage.value = "LISTA PARA GRABAR"; }, 3000);
+        setTimeout(() => { 
+          statusMessage.value = "LISTA PARA GRABAR"; 
+          if (isPreviewActive.value) startVideoPreview();
+        }, 3000);
       }
     );
-  }, 1000);
+  }, 3000);
 };
 
 const openGallery = async () => {
